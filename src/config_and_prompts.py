@@ -1,6 +1,6 @@
 import os
 
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "sk-or-xxxxxxxxxxxxxxxxx"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 MODELS_TO_TEST = [
