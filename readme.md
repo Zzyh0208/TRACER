@@ -1,79 +1,117 @@
 # PhysRCA: Physics-Grounded Evidence Construction for Zero-Shot Traffic Root Cause Analysis
 
-**PhysRCA** 是一个结合了交通仿真（SUMO）、因果推断（Granger Causality）和大语言模型（LLM）代理的根因分析框架。该项目旨在通过构建包含物理约束（路网拓扑、交通流理论）的因果图，解决城市交通网络中的复杂拥堵溯源问题。
+**PhysRCA** 是一个融合了交通仿真（SUMO）、统计因果推断（Granger Causality）和大语言模型（LLM）代理的交通拥堵根因分析框架。
 
-## 📁 目录结构
+本项目通过 **"检测 -> 并行诊断 -> 融合推理"** 的流程，利用物理知识（路网拓扑）和统计证据（格兰杰因果检验）辅助 LLM 准确定位交通拥堵的源头。
 
-PhysRCA/
-├── agent/
-│   └── tools.py               # 核心因果分析工具 (CCF, Granger Causality)
-├── graph/
-│   ├── graph_builder.py       # SUMO路网解析与 NetworkX 图构建
-│   └── pruner.py              # 基于梯度的子图检索与拥堵链追踪
-├── simulation/
-│   ├── step1_build_base_network.py   # 步骤1：构建基础侦察路网
-│   ├── step2_find_major_junctions.py # 步骤2：识别需升级的复杂路口
-│   ├── step3_build_final_network.py  # 步骤3：生成带强制信号灯的最终路网
-│   ├── generate_demand.py            # 生成基于引导式随机游走的交通需求
-│   ├── generate_detectors.py         # 生成全路网检测器 (E1 & Induction Loops)
-│   ├── optimize_tls.py               # 基于流量的信号灯周期优化
-│   └── simulator.py                  # SUMO 仿真控制器与故障注入引擎 (Blockage, Road Damage, TLS Fault)
-└── data/                      # 存放路网、日志和配置文件的目录
+## 🧠 核心算法逻辑 (Agent & LLM)
 
+PhysRCA 的诊断过程是一个 **"并行假设验证 + 全局融合"** 的过程，代码逻辑主要在 `main.py` 和 `utils.py` 中实现。
+
+### 1. 异常检测与候选生成 (Detector)
+
+* **输入**: 交通流日志 (CSV)。
+* **逻辑**: 使用加权检测器算法，结合速度下降率、占有率上升量和车辆数，计算异常分数。
+* **输出**: Top-5 异常路段 (Candidates)，作为并行的诊断起点。
+
+### 2. Stage 1: 并行链式诊断 (Parallel Workers)
+
+对 Top-5 中的每一个候选路段，启动一个独立的 Worker 进程（由 `utils.py/worker_process_candidate` 实现）：
+
+1. **链条追踪 (Pruner)**: 使用 `GradientSubgraphRetriever` 从候选点向上游和下游贪婪搜索，构建“拥堵传播链”。
+2. **统计验证 (Statistical Check)**:
+* 对链条中相邻的节点对（如 ）执行 **Granger Causality Test**。
+* 计算 F-score 和 P-value，判断下游拥堵是否是导致上游拥堵的统计学原因。
+
+
+3. **LLM 单链推理**:
+* 将 **链条数据** + **Granger 统计证据** 填入 `SYSTEM_PROMPT_STAGE1`。
+* LLM 输出该链条内的潜在根因及置信度。
+
+
+
+### 3. Stage 2: 全局融合推理 (Fusion)
+
+所有 Worker 完成后，进入融合阶段（由 `main.py/perform_fusion_analysis` 实现）：
+
+* **输入**: 5 条链条的诊断结果摘要。
+* **融合逻辑**:
+* **同链去重**: 如果单条链内重复报告，取最高置信度。
+* **异链叠加**: 如果不同链条指向同一个根因 (Edge ID)，则**累加**其 Impact Score（车辆影响数）。这是因为多条独立证据链指向同一源头增强了证据力度。
+
+
+* **输出**: 最终的根因排名列表。
+
+## 🚦 仿真环境构建 (Simulation)
+
+在运行分析前，需要构建高质量的仿真场景。`simulation/` 目录下的脚本构成了一个闭环工作流：
+
+1. **路网构建 (Steps 1-3)**:
+* `step1`: 下载 OSM 数据生成基础路网。
+* `step2`: 自动识别连接数  的复杂路口。
+* `step3`: 强制将这些路口升级为信号灯控制，生成 `xian_north_final.net.xml`。
+
+
+2. **需求生成**: `generate_demand.py` 基于路网等级（主干道/次干道）生成带有直行倾向和终点引导的随机车流。
+3. **设施铺设**: `generate_detectors.py` 自动铺设 E1 检测器和感应线圈。
+4. **故障模拟**: `simulator.py` 支持注入车道封锁 (Blockage)、信号灯全红 (All-Red) 和道路损毁 (Road Damage) 故障。
 
 ## 🚀 快速开始
 
-### 1. 环境依赖
+### 1. 环境准备
 
-确保已安装 [SUMO (Simulation of Urban MObility)](https://eclipse.dev/sumo/) 并配置了 `SUMO_HOME` 环境变量。
-
-安装 Python 依赖：
+确保安装 SUMO 和 Python 依赖：
 
 ```bash
-pip install numpy pandas scipy statsmodels networkx traci sumolib
+# 设置 SUMO_HOME 环境变量 (根据你的安装路径)
+export SUMO_HOME="/path/to/sumo"
+
+# 安装 Python 库
+pip install numpy pandas scipy statsmodels networkx traci sumolib requests tqdm
 
 ```
 
-### 2. 构建仿真环境 (Pipeline)
+### 2. 构建仿真场景
 
-本项目采用独特的 **"Reconnaissance-Upgrade" (侦察-升级)** 流程来构建高质量路网。
-
-执行提供的 Shell 脚本可一键完成所有准备工作：
+按顺序执行脚本生成数据（或编写 shell 脚本批量执行）：
 
 ```bash
-# 在 Windows Git Bash 或 Linux 环境下
-chmod +x build_simulation.sh
-./build_simulation.sh
+cd src/simulation
+python step1_build_base_network.py
+python step2_find_major_junctions.py
+python step3_build_final_network.py
+python generate_demand.py
+python generate_detectors.py
+# 此时 data/ 目录下会生成完整的路网文件
 
 ```
 
-**手动执行步骤说明：**
+### 3. 运行根因分析 (RCA)
 
-1. **构建基础路网** (`step1`): 下载 OSM 数据并生成无干预的基础路网。
-2. **路口侦察** (`step2`): 分析基础路网，找出连接数 >= 3 但未配置信号灯的复杂路口。
-3. **构建最终路网** (`step3`): 读取 Step 2 的结果，强制生成信号灯并应用高级优化，生成最终 `.net.xml`。
-4. **生成需求** (`generate_demand`): 基于路网分级（主干道/次干道）生成符合物理规律的交通流。
-5. **信号灯优化** (`optimize_tls`): 根据生成的车流优化信号灯周期。
-6. **部署检测器** (`generate_detectors`): 在所有相关车道铺设 E1 检测器和感应线圈。
+配置你的 API Key：
+打开 `src/config_and_prompts.py`，填入 `OPENROUTER_API_KEY`。
 
-### 3. 运行根因分析
+执行主程序：
 
-路网构建完成后，您需要编写一个主入口脚本来调用 `simulation/simulator.py` 运行仿真，并利用 `agent` 和 `graph` 模块进行分析。
+```bash
+cd src
+python main.py
 
-**核心模块说明：**
+```
 
-* **RoadGraphManager**: 将 `.net.xml` 转换为 NetworkX 有向图，用于拓扑分析。
-* **GradientSubgraphRetriever**: 当检测到异常时，从中心节点向上下游贪婪搜索，构建“拥堵传播链”。
-* **CausalVerifier**: 对提取的传播链进行统计检验：
-* `analyze_propagation`: 计算互相关 (CCF) 以确定传播滞后时间。
-* `verify_granger_causality`: 执行格兰杰因果检验，验证拥堵传播的因果显著性 (P-value)。
+程序将自动：
 
+1. 加载路网图 (`graph_builder`).
+2. 读取 `data/dataset_raw` 下的 CSV 日志。
+3. 并行启动 5 个 Worker 分析 Top-5 异常点。
+4. 调用 LLM 进行 Stage 2 融合。
+5. 输出结果到 `results/` 目录。
 
+## ⚙️ 配置说明
 
-## 🛠️ 故障注入 (Fault Injection)
+在 `src/config_and_prompts.py` 中可调整关键参数：
 
-`SumoSimulator` 类提供了三种物理故障注入方法，用于生成测试数据：
-
-1. `inject_lane_blockage`: 模拟车道物理遮挡（捕鼠夹模式，强制捕获车辆）。
-2. `inject_traffic_light_all_red`: 模拟信号灯故障（全红死锁）。
-3. `inject_road_damage`: 模拟道路损毁（强制降低限速）。
+* `MODELS_TO_TEST`: 待评测的大模型列表。
+* `DIAGNOSIS_TIME`: 诊断切片时间点。
+* `TOP_K_AGENT`: 并行分析的候选节点数量（默认 5）。
+* `SYSTEM_PROMPT_STAGE1/2`: 调整提示词策略。
