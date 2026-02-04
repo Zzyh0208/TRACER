@@ -1,12 +1,12 @@
-# PhysRCA: Physics-Grounded Evidence Construction for Zero-Shot Traffic Root Cause Analysis
+# TRACER: Physics-Guided Causal Evidence Construction for Zero-Shot Traffic Anomaly Diagnosis
 
-**PhysRCA** 是一个融合了交通仿真（SUMO）、统计因果推断（Granger Causality）和大语言模型（LLM）代理的交通拥堵根因分析框架。
+**TRACER** 是一个融合了交通仿真（SUMO）、统计因果推断（Granger Causality）和大语言模型（LLM）代理的交通拥堵根因分析框架。
 
 本项目通过 **"检测 -> 并行诊断 -> 融合推理"** 的流程，利用物理知识（路网拓扑）和统计证据（格兰杰因果检验）辅助 LLM 准确定位交通拥堵的源头。
 
 ## 🧠 核心算法逻辑 (Agent & LLM)
 
-PhysRCA 的诊断过程是一个 **"并行假设验证 + 全局融合"** 的过程，代码逻辑主要在 `main.py` 和 `utils.py` 中实现。
+TRACER 的诊断过程是一个 **"并行假设验证 + 全局融合"** 的过程，代码逻辑主要在 `main.py` 和 `utils.py` 中实现。
 
 ### 1. 异常检测与候选生成 (Detector)
 
