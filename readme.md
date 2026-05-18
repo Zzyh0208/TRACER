@@ -1,5 +1,7 @@
 # TRACER: Physics-Guided Causal Evidence Construction for Zero-Shot Traffic Anomaly Diagnosis
 
+[![DOI](https://shields.io)](https://doi.org/10.5281/zenodo.20267314)
+
 **TRACER** is a traffic congestion root cause analysis framework that integrates traffic simulation (SUMO), statistical causal inference (Granger Causality), and Large Language Model (LLM) agents.
 
 Through a workflow of **"Detection -> Parallel Diagnosis -> Fusion Reasoning"**, this project utilizes physical knowledge (road network topology) and statistical evidence (Granger causality test) to assist LLMs in accurately pinpointing the source of traffic congestion.
